@@ -76,11 +76,18 @@ function detectLabels(text: string, rules: LabelRule[]): string[] {
   const matched = new Set<string>();
 
   for (const rule of rules) {
+    core.debug(`Rule "${rule.label}": checking keywords [${rule.keywords.join(", ")}]`);
+    let ruleMatched = false;
     for (const keyword of rule.keywords) {
       if (lower.includes(keyword)) {
+        core.debug(`Rule "${rule.label}": matched keyword "${keyword}"`);
         matched.add(rule.label);
+        ruleMatched = true;
         break;
       }
+    }
+    if (!ruleMatched) {
+      core.debug(`Rule "${rule.label}": no match`);
     }
   }
 
@@ -146,6 +153,11 @@ async function run(): Promise<void> {
     const isPR = context.eventName === "pull_request";
     const isIssue = context.eventName === "issues";
 
+    core.debug(`Event: ${context.eventName}, Action: ${context.payload.action ?? "n/a"}`);
+    core.debug(`Repository: ${context.repo.owner}/${context.repo.repo}`);
+    core.debug(`Custom label-rules provided: ${rawRules.trim().length > 0 ? "yes" : "no"}`);
+    core.debug(`Comment template: ${commentTemplate.length > 0 ? `"${commentTemplate}"` : "(default)"}`);
+
     if (!isPR && !isIssue) {
       core.info(`Event "${context.eventName}" is not supported \u2013 skipping.`);
       return;
@@ -177,6 +189,8 @@ async function run(): Promise<void> {
     }
 
     core.info(`Processing #${issueNumber}: "${title}"`);
+    core.debug(`Title: "${title}"`);
+    core.debug(`Body: "${body.substring(0, 200)}${body.length > 200 ? "..." : ""}"`);
 
     if (title.length === 0 && body.length === 0) {
       core.info("Title and body are both empty \u2013 skipping label detection.");
@@ -190,6 +204,7 @@ async function run(): Promise<void> {
 
     // 4. Add labels via GitHub API -------------------------------------------
     if (labels.length > 0) {
+      core.debug(`Calling issues.addLabels with: [${labels.join(", ")}]`);
       await octokit.rest.issues.addLabels({
         owner: context.repo.owner,
         repo: context.repo.repo,
@@ -203,6 +218,7 @@ async function run(): Promise<void> {
     const comment = buildComment(labels, isPR, commentTemplate);
 
     if (comment !== null) {
+      core.debug(`Posting comment (${comment.length} chars) to #${issueNumber}`);
       await octokit.rest.issues.createComment({
         owner: context.repo.owner,
         repo: context.repo.repo,
