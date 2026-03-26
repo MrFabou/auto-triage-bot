@@ -1,19 +1,62 @@
-import * as core from "@actions/core";
+﻿import * as core from "@actions/core";
 import * as github from "@actions/github";
 
 // ---------------------------------------------------------------------------
-// Keyword → Label mapping
+// Keyword -> Label mapping
 // ---------------------------------------------------------------------------
 interface LabelRule {
   label: string;
   keywords: string[];
 }
 
-const LABEL_RULES: LabelRule[] = [
+const DEFAULT_LABEL_RULES: LabelRule[] = [
   { label: "bug", keywords: ["crash", "error", "bug", "fail", "broken", "exception"] },
   { label: "enhancement", keywords: ["feature", "add", "idea", "improve", "request", "enhance"] },
   { label: "documentation", keywords: ["typo", "docs", "documentation", "readme", "spelling"] },
 ];
+
+/**
+ * Parse the 'label-rules' input.  Returns the built-in defaults when the
+ * input is empty or not provided.
+ */
+function parseLabelRules(raw: string): LabelRule[] {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) {
+    core.info("No custom label-rules provided - using built-in defaults.");
+    return DEFAULT_LABEL_RULES;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error(
+      `Invalid JSON in 'label-rules' input: ${trimmed.substring(0, 120)}...`
+    );
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error("'label-rules' must be a JSON array of {label, keywords} objects.");
+  }
+
+  for (const entry of parsed) {
+    if (
+      typeof entry !== "object" ||
+      entry === null ||
+      typeof entry.label !== "string" ||
+      !Array.isArray(entry.keywords) ||
+      !entry.keywords.every((k: unknown) => typeof k === "string")
+    ) {
+      throw new Error(
+        `Invalid rule in 'label-rules': ${JSON.stringify(entry)}. ` +
+        `Expected {"label": "string", "keywords": ["string"]}.`
+      );
+    }
+  }
+
+  core.info(`Loaded ${parsed.length} custom label rule(s).`);
+  return parsed as LabelRule[];
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -28,15 +71,15 @@ function sanitizeText(value: unknown): string {
 }
 
 /** Return the set of labels whose keywords appear in `text`. */
-function detectLabels(text: string): string[] {
+function detectLabels(text: string, rules: LabelRule[]): string[] {
   const lower = text.toLowerCase();
   const matched = new Set<string>();
 
-  for (const rule of LABEL_RULES) {
+  for (const rule of rules) {
     for (const keyword of rule.keywords) {
       if (lower.includes(keyword)) {
         matched.add(rule.label);
-        break; // one hit per rule is enough
+        break;
       }
     }
   }
@@ -50,13 +93,13 @@ function buildComment(labels: string[], isPR: boolean): string {
 
   if (labels.length === 0) {
     return (
-      `👋 Thanks for opening this ${entity}! ` +
+      `Thanks for opening this ${entity}! ` +
       `I couldn't automatically determine a category, but a maintainer will review it shortly.`
     );
   }
 
   return (
-    `👋 Thanks for opening this ${entity}! ` +
+    `Thanks for opening this ${entity}! ` +
     `I've automatically categorized it as **${labels.join("**, **")}**. ` +
     `A maintainer will review it shortly.`
   );
@@ -68,20 +111,20 @@ function buildComment(labels: string[], isPR: boolean): string {
 
 async function run(): Promise<void> {
   try {
-    // 1. Get inputs & context ------------------------------------------------
     const token = core.getInput("github-token", { required: true });
+    const rawRules = core.getInput("label-rules");
     const octokit = github.getOctokit(token);
     const { context } = github;
+    const rules = parseLabelRules(rawRules);
 
     const isPR = context.eventName === "pull_request";
     const isIssue = context.eventName === "issues";
 
     if (!isPR && !isIssue) {
-      core.info(`Event "${context.eventName}" is not supported – skipping.`);
+      core.info(`Event "${context.eventName}" is not supported - skipping.`);
       return;
     }
 
-    // 2. Extract title & body ------------------------------------------------
     let title: string;
     let body: string;
     let issueNumber: number;
@@ -109,16 +152,14 @@ async function run(): Promise<void> {
     core.info(`Processing #${issueNumber}: "${title}"`);
 
     if (title.length === 0 && body.length === 0) {
-      core.info("Title and body are both empty – skipping label detection.");
+      core.info("Title and body are both empty - skipping label detection.");
     }
 
-    // 3. Detect labels -------------------------------------------------------
     const combinedText = `${title} ${body}`;
-    const labels = detectLabels(combinedText);
+    const labels = detectLabels(combinedText, rules);
 
     core.info(`Detected labels: ${labels.length > 0 ? labels.join(", ") : "(none)"}`);
 
-    // 4. Add labels via GitHub API -------------------------------------------
     if (labels.length > 0) {
       await octokit.rest.issues.addLabels({
         owner: context.repo.owner,
@@ -129,7 +170,6 @@ async function run(): Promise<void> {
       core.info(`Labels added to #${issueNumber}.`);
     }
 
-    // 5. Post a friendly comment ---------------------------------------------
     const comment = buildComment(labels, isPR);
 
     await octokit.rest.issues.createComment({
@@ -140,7 +180,6 @@ async function run(): Promise<void> {
     });
     core.info("Comment posted.");
 
-    // 6. Set outputs ---------------------------------------------------------
     core.setOutput("labels", labels.join(","));
   } catch (error) {
     if (error instanceof Error) {

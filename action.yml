@@ -1,4 +1,4 @@
-name: 'Auto-Triage-Bot'
+﻿name: 'Auto-Triage-Bot'
 description: 'Automatically labels and comments on new issues and pull requests based on keyword analysis.'
 author: 'Auto-Triage-Bot'
 
@@ -7,6 +7,13 @@ inputs:
     description: 'GitHub token used to add labels and post comments.'
     required: true
     default: ${{ github.token }}
+  label-rules:
+    description: |
+      Optional JSON string that defines custom keyword-to-label rules.
+      Format: [{"label":"bug","keywords":["crash","error"]}]
+      When omitted the built-in defaults are used.
+    required: false
+    default: ''
 
 runs:
   using: 'node20'
