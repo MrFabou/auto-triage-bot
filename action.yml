@@ -1,4 +1,4 @@
-﻿name: 'Auto-Triage-Bot'
+name: 'Auto-Triage-Bot'
 description: 'Automatically labels and comments on new issues and pull requests based on keyword analysis.'
 author: 'Auto-Triage-Bot'
 
@@ -12,6 +12,14 @@ inputs:
       Optional JSON string that defines custom keyword-to-label rules.
       Format: [{"label":"bug","keywords":["crash","error"]}]
       When omitted the built-in defaults are used.
+    required: false
+    default: ''
+  comment-template:
+    description: |
+      Custom comment posted on new issues/PRs.
+      Supports placeholders: {labels}, {entity}.
+      Set to "none" to disable commenting entirely.
+      Leave empty to use the built-in default comment.
     required: false
     default: ''
 
