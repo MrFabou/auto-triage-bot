@@ -1,0 +1,25 @@
+{
+  "name": "auto-triage-bot",
+  "version": "1.0.0",
+  "description": "Automatically labels and comments on new issues and pull requests based on keyword analysis.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "ncc build src/index.ts --source-map --license licenses.txt",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "github-action",
+    "triage",
+    "labeler"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "@actions/github": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@vercel/ncc": "^0.38.3",
+    "typescript": "^5.3.3"
+  }
+}

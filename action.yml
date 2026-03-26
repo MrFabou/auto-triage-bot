@@ -1,0 +1,17 @@
+name: 'Auto-Triage-Bot'
+description: 'Automatically labels and comments on new issues and pull requests based on keyword analysis.'
+author: 'Auto-Triage-Bot'
+
+inputs:
+  github-token:
+    description: 'GitHub token used to add labels and post comments.'
+    required: true
+    default: ${{ github.token }}
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
+
+branding:
+  icon: 'tag'
+  color: 'blue'
