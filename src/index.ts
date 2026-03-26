@@ -1,4 +1,4 @@
-﻿import * as core from "@actions/core";
+import * as core from "@actions/core";
 import * as github from "@actions/github";
 
 // ---------------------------------------------------------------------------
@@ -22,7 +22,7 @@ const DEFAULT_LABEL_RULES: LabelRule[] = [
 function parseLabelRules(raw: string): LabelRule[] {
   const trimmed = raw.trim();
   if (trimmed.length === 0) {
-    core.info("No custom label-rules provided - using built-in defaults.");
+    core.info("No custom label-rules provided \u2013 using built-in defaults.");
     return DEFAULT_LABEL_RULES;
   }
 
@@ -87,19 +87,43 @@ function detectLabels(text: string, rules: LabelRule[]): string[] {
   return [...matched];
 }
 
-/** Build a friendly triage comment depending on the context. */
-function buildComment(labels: string[], isPR: boolean): string {
+/**
+ * Build the triage comment.
+ *
+ * - template === ""      -> use the built-in default
+ * - template === "none"  -> return null (skip commenting)
+ * - otherwise            -> use the template with {labels} and {entity} placeholders
+ */
+function buildComment(
+  labels: string[],
+  isPR: boolean,
+  template: string,
+): string | null {
   const entity = isPR ? "pull request" : "issue";
+  const labelText = labels.length > 0 ? labels.join(", ") : "uncategorized";
 
+  // Commenting disabled
+  if (template.toLowerCase() === "none") {
+    return null;
+  }
+
+  // Custom template
+  if (template.length > 0) {
+    return template
+      .replace(/\{labels\}/g, labelText)
+      .replace(/\{entity\}/g, entity);
+  }
+
+  // Built-in default
   if (labels.length === 0) {
     return (
-      `Thanks for opening this ${entity}! ` +
+      `\ud83d\udc4b Thanks for opening this ${entity}! ` +
       `I couldn't automatically determine a category, but a maintainer will review it shortly.`
     );
   }
 
   return (
-    `Thanks for opening this ${entity}! ` +
+    `\ud83d\udc4b Thanks for opening this ${entity}! ` +
     `I've automatically categorized it as **${labels.join("**, **")}**. ` +
     `A maintainer will review it shortly.`
   );
@@ -111,8 +135,10 @@ function buildComment(labels: string[], isPR: boolean): string {
 
 async function run(): Promise<void> {
   try {
+    // 1. Get inputs & context ------------------------------------------------
     const token = core.getInput("github-token", { required: true });
     const rawRules = core.getInput("label-rules");
+    const commentTemplate = core.getInput("comment-template").trim();
     const octokit = github.getOctokit(token);
     const { context } = github;
     const rules = parseLabelRules(rawRules);
@@ -121,10 +147,11 @@ async function run(): Promise<void> {
     const isIssue = context.eventName === "issues";
 
     if (!isPR && !isIssue) {
-      core.info(`Event "${context.eventName}" is not supported - skipping.`);
+      core.info(`Event "${context.eventName}" is not supported \u2013 skipping.`);
       return;
     }
 
+    // 2. Extract title & body ------------------------------------------------
     let title: string;
     let body: string;
     let issueNumber: number;
@@ -152,14 +179,16 @@ async function run(): Promise<void> {
     core.info(`Processing #${issueNumber}: "${title}"`);
 
     if (title.length === 0 && body.length === 0) {
-      core.info("Title and body are both empty - skipping label detection.");
+      core.info("Title and body are both empty \u2013 skipping label detection.");
     }
 
+    // 3. Detect labels -------------------------------------------------------
     const combinedText = `${title} ${body}`;
     const labels = detectLabels(combinedText, rules);
 
     core.info(`Detected labels: ${labels.length > 0 ? labels.join(", ") : "(none)"}`);
 
+    // 4. Add labels via GitHub API -------------------------------------------
     if (labels.length > 0) {
       await octokit.rest.issues.addLabels({
         owner: context.repo.owner,
@@ -170,16 +199,22 @@ async function run(): Promise<void> {
       core.info(`Labels added to #${issueNumber}.`);
     }
 
-    const comment = buildComment(labels, isPR);
+    // 5. Post a friendly comment ---------------------------------------------
+    const comment = buildComment(labels, isPR, commentTemplate);
 
-    await octokit.rest.issues.createComment({
-      owner: context.repo.owner,
-      repo: context.repo.repo,
-      issue_number: issueNumber,
-      body: comment,
-    });
-    core.info("Comment posted.");
+    if (comment !== null) {
+      await octokit.rest.issues.createComment({
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        issue_number: issueNumber,
+        body: comment,
+      });
+      core.info("Comment posted.");
+    } else {
+      core.info("Commenting is disabled via comment-template=none \u2013 skipped.");
+    }
 
+    // 6. Set outputs ---------------------------------------------------------
     core.setOutput("labels", labels.join(","));
   } catch (error) {
     if (error instanceof Error) {
