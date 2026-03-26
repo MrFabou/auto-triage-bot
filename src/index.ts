@@ -19,6 +19,14 @@ const LABEL_RULES: LabelRule[] = [
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Safely convert an unknown payload value to a trimmed string. */
+function sanitizeText(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  return String(value).trim();
+}
+
 /** Return the set of labels whose keywords appear in `text`. */
 function detectLabels(text: string): string[] {
   const lower = text.toLowerCase();
@@ -84,8 +92,8 @@ async function run(): Promise<void> {
         core.setFailed("Could not read issue payload.");
         return;
       }
-      title = issue.title ?? "";
-      body = issue.body ?? "";
+      title = sanitizeText(issue.title);
+      body = sanitizeText(issue.body);
       issueNumber = issue.number;
     } else {
       const pr = context.payload.pull_request;
@@ -93,12 +101,16 @@ async function run(): Promise<void> {
         core.setFailed("Could not read pull_request payload.");
         return;
       }
-      title = pr.title ?? "";
-      body = pr.body ?? "";
+      title = sanitizeText(pr.title);
+      body = sanitizeText(pr.body);
       issueNumber = pr.number;
     }
 
     core.info(`Processing #${issueNumber}: "${title}"`);
+
+    if (title.length === 0 && body.length === 0) {
+      core.info("Title and body are both empty – skipping label detection.");
+    }
 
     // 3. Detect labels -------------------------------------------------------
     const combinedText = `${title} ${body}`;
